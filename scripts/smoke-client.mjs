@@ -124,6 +124,57 @@ async function main() {
 		assert.deepEqual(producedForClosing({ produced: [] }, 100), []);
 	});
 
+	await check("producedFilesFromSnapshot collects produced files newest-first with dedupe and cap", async () => {
+		const factory = loaded.factory;
+		const moduleExports = factory((id) => {
+			if (id === "react") return react;
+			if (id === "react/jsx-runtime") return { jsx: () => null, jsxs: () => null, Fragment: react.Fragment };
+			if (id === "@deepseek-ai/dsh-client-ui-primitives") return { Tooltip: () => null };
+			throw new Error(`unexpected require: ${id}`);
+		});
+		const collect = moduleExports.producedFilesFromSnapshot;
+		const nodes = [
+			{ kind: "tool-result", seq: 10, time: 1000, callView: { card: "diff", locations: [{ path: "C:\\a\\one.md" }] } },
+			{ kind: "tool-result", seq: 11, time: 1100, callView: { card: "generic", kind: "edit", locations: [{ path: "C:\\a\\two.ts" }] } },
+			{ kind: "tool-result", seq: 12, time: 1200, callView: { card: "generic", kind: "read", locations: [{ path: "C:\\a\\read-only.ts" }] } },
+			{ kind: "tool-result", seq: 13, time: 1300, callView: { card: "diff", locations: [{ path: "C:\\a\\one.md" }] } },
+			{ kind: "assistant", seq: 14, time: 1400 },
+			null,
+			{ kind: "tool-result", seq: 15, time: 1500, callView: { card: "terminal", title: "ls" } }
+		];
+		const result = collect(nodes);
+		assert.deepEqual(result, [
+			{ path: "C:\\a\\one.md", seq: 13, time: 1300 },
+			{ path: "C:\\a\\two.ts", seq: 11, time: 1100 }
+		]);
+		assert.deepEqual(collect(undefined), []);
+		assert.deepEqual(collect([]), []);
+
+		// Cap: more than 10 distinct produced paths keep only the newest 10.
+		const many = [];
+		for (let i = 0; i < 14; i += 1) {
+			many.push({ kind: "tool-result", seq: 100 + i, time: i, callView: { card: "diff", locations: [{ path: `C:\\a\\f${i}.txt` }] } });
+		}
+		const capped = collect(many);
+		assert.equal(capped.length, 10);
+		assert.equal(capped[0].path, "C:\\a\\f13.txt");
+		assert.equal(capped[9].path, "C:\\a\\f4.txt");
+	});
+
+	await check("guessKind maps extensions", async () => {
+		const factory = loaded.factory;
+		const moduleExports = factory((id) => {
+			if (id === "react") return react;
+			if (id === "react/jsx-runtime") return { jsx: () => null, jsxs: () => null, Fragment: react.Fragment };
+			if (id === "@deepseek-ai/dsh-client-ui-primitives") return { Tooltip: () => null };
+			throw new Error(`unexpected require: ${id}`);
+		});
+		assert.equal(moduleExports.guessKind("C:\\a\\x.pdf"), "pdf");
+		assert.equal(moduleExports.guessKind("C:\\a\\x.PNG"), "image");
+		assert.equal(moduleExports.guessKind("C:\\a\\x.ts"), "text");
+		assert.equal(moduleExports.guessKind("C:\\a\\noext"), "file");
+	});
+
 	await check("openPreview mutates the shared store", async () => {
 		const factory = loaded.factory;
 		const moduleExports = factory((id) => {

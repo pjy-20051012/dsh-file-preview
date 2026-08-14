@@ -1,14 +1,14 @@
 # dsh-file-preview
 
 [![CI](https://github.com/pjy-20051012/dsh-file-preview/actions/workflows/ci.yml/badge.svg)](https://github.com/pjy-20051012/dsh-file-preview/actions/workflows/ci.yml)
-[![version](https://img.shields.io/badge/version-0.1.0-1f6feb)](https://github.com/pjy-20051012/dsh-file-preview/releases)
+[![version](https://img.shields.io/badge/version-0.2.0-1f6feb)](https://github.com/pjy-20051012/dsh-file-preview/releases)
 [![license](https://img.shields.io/badge/license-MIT-2da44e)](LICENSE)
 
 为 [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) 网页端（`dsh web`）增加 Codex 风格的文件能力：
 
-- **右侧文件预览栏**：点击对话中的文件即可在右侧面板预览 — 文本/代码、图片、PDF 均可；支持「用默认程序打开」和「打开所在文件夹」。
+- **最近文件列表**：点击侧边栏「文件预览」入口，右侧面板直接展示本会话最近 10 个产出文件，点任意一个即可预览。
+- **右侧文件预览栏**：预览文本/代码、图片、PDF；支持「用默认程序打开」和「打开所在文件夹」，可从预览一键返回最近文件列表。
 - **对话中的文件操作行**：每条助手回复下方（turn 尾部）展示该轮产出的文件，每个文件带三个动作：预览、打开、在文件夹中显示。
-- **侧边栏入口**：侧边栏底部的「文件预览」按钮可随时唤起/收起预览面板。
 
 实现方式与 [dsh-usage-stats](https://github.com/Ychris12138/dsh-usage-stats) 完全一致：服务端 Cordis 插件注册回环-only 的 HTTP 端点，浏览器端手写 `__ModuleLoader__` bundle 注入界面，无构建步骤。
 
@@ -16,7 +16,8 @@
 
 | 功能 | 说明 |
 | --- | --- |
-| 右侧预览栏 | `shell.overlay` 全应用浮动层；文本/代码高亮展示（截断保护）、图片、PDF 内嵌预览 |
+| 最近文件列表 | 侧边栏入口打开后默认显示本会话最近 10 个产出文件（名称/路径/时间，可预览/打开/定位文件夹） |
+| 右侧预览栏 | `shell.overlay` 全应用浮动层；文本/代码展示（截断保护）、图片、PDF 内嵌预览；可从预览返回列表 |
 | 对话文件操作行 | `conversation.chat.turnTail` chain 条目（`priority: -10`，优先于内置 deliverables 行），每文件提供 预览/打开/文件夹 三动作 |
 | 打开所在文件夹 | Windows `explorer /select`、macOS `open -R`、Linux 打开所在目录 |
 | 默认程序打开 | 复用会话层 `openFile`（宿主 `host.openPath`）；服务端也提供等价端点 |
@@ -64,10 +65,10 @@ dsh web
 
 ## 使用 / Usage
 
-- 点击对话中「文件操作」行里的文件名 → 右侧预览面板打开并显示内容。
-- 行内图标按钮：↗ 用默认程序打开，📂 打开所在文件夹（资源管理器定位）。
-- 面板标题栏按钮：↗ 打开、📂 打开所在文件夹、刷新、关闭。
-- 侧边栏「文件预览」按钮：切换面板显示/隐藏。
+- 点击侧边栏底部「文件预览」→ 右侧面板打开**最近文件**列表（本会话最近 10 个产出文件），点文件名直接预览。
+- 对话中「文件操作」行：点击文件名 → 预览；↗ 用默认程序打开；📂 打开所在文件夹。
+- 预览面板标题栏：← 返回最近文件、↗ 打开、📂 打开所在文件夹、刷新、关闭。
+- 最近文件列表随对话实时更新（隐藏收集器监听会话快照），无需手动刷新。
 
 ## Agent 友好安装 / Agent-friendly installation
 

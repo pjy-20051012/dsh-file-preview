@@ -57,7 +57,9 @@ const primitivesStub = {
 	IconFolderOpenOutline16: icon,
 	IconRightUpOutline14: icon,
 	IconPaperclipOutline16: icon,
-	IconCodeOutline16: icon
+	IconCodeOutline16: icon,
+	IconDataOutline16: icon,
+	IconChevronLeftOutline14: icon
 };
 
 async function loadBundle() {
@@ -91,11 +93,16 @@ const t = (key, params) => {
 		"panel.reveal": "打开所在文件夹",
 		"panel.refresh": "刷新",
 		"panel.close": "关闭",
+		"panel.back": "返回最近文件",
 		"badge": "文件预览",
 		"row.label": "文件操作",
 		"row.preview": "预览 {name}",
 		"row.open": "打开 {name}",
 		"row.reveal": "在文件夹中显示 {name}",
+		"recent.title": "最近文件",
+		"recent.subtitle": "本会话最近 {count} 个文件，点击可预览",
+		"recent.empty": "还没有最近文件。",
+		"recent.preview": "预览 {name}",
 		"kind.text": "文本",
 		"kind.image": "图片",
 		"kind.pdf": "PDF",
@@ -144,6 +151,53 @@ async function main() {
 		assert.match(html, /fp_panel/);
 		assert.match(html, /a\.txt/);
 		assert.match(html, /打开所在文件夹/);
+	});
+
+	await check("RecentList renders rows with actions", async () => {
+		const html = renderer.renderToString(react.createElement(mod.RecentList, {
+			items: [
+				{ path: "C:\\work\\one.md", seq: 10, time: 1000 },
+				{ path: "C:\\work\\two.png", seq: 11, time: 2000 },
+				{ path: "C:\\work\\three.pdf", seq: 12, time: 3000 }
+			],
+			t
+		}));
+		assert.match(html, /one\.md/);
+		assert.match(html, /two\.png/);
+		assert.match(html, /three\.pdf/);
+		assert.match(html, /C:\\work\\one\.md/);
+		assert.equal((html.match(/fp_recentRow/g) ?? []).length, 3);
+	});
+
+	await check("RecentList renders empty note when no items", async () => {
+		const html = renderer.renderToString(react.createElement(mod.RecentList, { items: [], t }));
+		assert.match(html, /还没有最近文件/);
+	});
+
+	await check("showRecent opens the panel in RECENT view", async () => {
+		mod.setRecentFiles([
+			{ path: "C:\\work\\a.txt", seq: 1, time: 1 },
+			{ path: "C:\\work\\b.ts", seq: 2, time: 2 }
+		]);
+		mod.showRecent();
+		const html = renderer.renderToString(react.createElement(mod.PreviewPanel, { t }));
+		assert.match(html, /fp_recentList/);
+		assert.match(html, /最近文件/);
+		assert.match(html, /a\.txt/);
+		assert.match(html, /b\.ts/);
+		assert.doesNotMatch(html, /fp_iframe/);
+	});
+
+	await check("preview view shows a back button when recent files exist", async () => {
+		mod.openPreview("C:\\work\\a.txt");
+		const html = renderer.renderToString(react.createElement(mod.PreviewPanel, { t }));
+		assert.match(html, /返回最近文件/);
+		assert.match(html, /fp_chevron|aria-label="返回最近文件"/);
+	});
+
+	await check("RecentFilesCollector renders nothing", async () => {
+		const html = renderer.renderToString(react.createElement(mod.RecentFilesCollector, { session: { nodes: [] } }));
+		assert.equal(html, "");
 	});
 
 	await check("renderPreviewBody renders text, image, pdf and binary bodies", async () => {

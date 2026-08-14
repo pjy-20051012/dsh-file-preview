@@ -1,0 +1,6 @@
+node_modules/
+.npm-cache/
+output/
+coverage/
+*.log
+.DS_Store

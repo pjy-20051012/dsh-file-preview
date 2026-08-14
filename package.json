@@ -1,0 +1,57 @@
+{
+  "name": "dsh-file-preview",
+  "description": "Conversation file links + right-side file preview panel for the dsh web GUI",
+  "version": "0.1.0",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/pjy-20051012/dsh-file-preview.git"
+  },
+  "keywords": [
+    "deepseek",
+    "deepseek-harness",
+    "dsh",
+    "file-preview"
+  ],
+  "bin": {
+    "dsh-file-preview-install": "scripts/install.mjs"
+  },
+  "files": [
+    "lib/",
+    "scripts/install.mjs",
+    "README.md",
+    "LICENSE",
+    "SECURITY.md"
+  ],
+  "type": "module",
+  "main": "lib/index.js",
+  "exports": {
+    ".": "./lib/index.js",
+    "./client": "./lib/client.js",
+    "./package.json": "./package.json"
+  },
+  "dsh": {
+    "client": {
+      "platform": "web",
+      "inject": [
+        "@deepseek-ai/dsh-client-locale",
+        "@deepseek-ai/dsh-client-runtime",
+        "@deepseek-ai/dsh-client-ui-primitives",
+        "@deepseek-ai/dsh-client-connection"
+      ]
+    }
+  },
+  "scripts": {
+    "check": "node --check lib/index.js && node --check lib/client.js && node --check scripts/install.mjs && node --check scripts/smoke-server.mjs && node --check scripts/smoke-client.mjs && node --check scripts/smoke-ssr.mjs && node --check scripts/test-install.mjs",
+    "test:client": "node scripts/smoke-client.mjs",
+    "test:ui": "node scripts/smoke-ssr.mjs",
+    "test:server": "node scripts/smoke-server.mjs",
+    "test:install": "node scripts/test-install.mjs",
+    "test": "npm run test:client && npm run test:ui && npm run test:server && npm run test:install"
+  },
+  "devDependencies": {
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0"
+  },
+  "license": "MIT"
+}

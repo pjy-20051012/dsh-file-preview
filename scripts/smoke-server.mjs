@@ -43,6 +43,9 @@ async function main() {
 		assert.equal(classify("/x/a.png", ".png"), "image");
 		assert.equal(classify("/x/a.pdf", ".pdf"), "pdf");
 		assert.equal(classify("/x/a.ts", ".ts"), "text");
+		assert.equal(classify("/x/a.pptx", ".pptx"), "office");
+		assert.equal(classify("/x/a.docx", ".docx"), "office");
+		assert.equal(classify("/x/a.xlsx", ".xlsx"), "office");
 		assert.equal(classify("/x/a.zzz", ".zzz"), "unknown");
 	});
 

@@ -138,14 +138,16 @@ async function main() {
 			{ kind: "tool-result", seq: 11, time: 1100, callView: { card: "generic", kind: "edit", locations: [{ path: "C:\\a\\two.ts" }] } },
 			{ kind: "tool-result", seq: 12, time: 1200, callView: { card: "generic", kind: "read", locations: [{ path: "C:\\a\\read-only.ts" }] } },
 			{ kind: "tool-result", seq: 13, time: 1300, callView: { card: "diff", locations: [{ path: "C:\\a\\one.md" }] } },
-			{ kind: "assistant", seq: 14, time: 1400 },
+			{ kind: "assistant", seq: 14, time: 1400, blocks: [{ type: "text", text: "完成，见 `D:\\out\\report.pptx` 和 `C:\\a\\two.ts`。" }] },
 			null,
-			{ kind: "tool-result", seq: 15, time: 1500, callView: { card: "terminal", title: "ls" } }
+			{ kind: "tool-result", seq: 15, time: 1500, callView: { card: "terminal", title: "ls" }, content: [{ type: "text", text: "copied to D:\\out\\deck.pptx" }] }
 		];
 		const result = collect(nodes);
 		assert.deepEqual(result, [
-			{ path: "C:\\a\\one.md", seq: 13, time: 1300 },
-			{ path: "C:\\a\\two.ts", seq: 11, time: 1100 }
+			{ path: "D:\\out\\deck.pptx", seq: 15, time: 1500 },
+			{ path: "D:\\out\\report.pptx", seq: 14, time: 1400 },
+			{ path: "C:\\a\\two.ts", seq: 14, time: 1400 },
+			{ path: "C:\\a\\one.md", seq: 13, time: 1300 }
 		]);
 		assert.deepEqual(collect(undefined), []);
 		assert.deepEqual(collect([]), []);
@@ -172,6 +174,8 @@ async function main() {
 		assert.equal(moduleExports.guessKind("C:\\a\\x.pdf"), "pdf");
 		assert.equal(moduleExports.guessKind("C:\\a\\x.PNG"), "image");
 		assert.equal(moduleExports.guessKind("C:\\a\\x.ts"), "text");
+		assert.equal(moduleExports.guessKind("C:\\a\\x.pptx"), "office");
+		assert.equal(moduleExports.guessKind("C:\\a\\x.docx"), "office");
 		assert.equal(moduleExports.guessKind("C:\\a\\noext"), "file");
 	});
 

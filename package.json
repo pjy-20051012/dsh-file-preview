@@ -1,7 +1,7 @@
 {
   "name": "dsh-file-preview",
   "description": "Conversation file links + right-side file preview panel for the dsh web GUI",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "repository": {
     "type": "git",

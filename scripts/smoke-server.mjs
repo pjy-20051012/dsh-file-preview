@@ -13,7 +13,7 @@ import { createServer } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { apply, classify, extractOffice, explorerSelectArg, isAbsolutePath, sniffText, PREVIEW_PATH, RAW_PATH, OPEN_PATH, REVEAL_PATH } from "../lib/index.js";
+import { apply, classify, convertOfficeToPdf, extractOffice, explorerSelectArg, isAbsolutePath, officeConverterKind, sniffText, PREVIEW_PATH, RAW_PATH, OPEN_PATH, REVEAL_PATH } from "../lib/index.js";
 
 /**
  * Build a minimal ZIP archive with STORED entries (method 0) — enough for
@@ -102,6 +102,14 @@ function pptxFixture() {
 	]);
 }
 
+/** Minimal .odt fixture (ODF has no COM converter → deterministic text fallback). */
+function odtFixture() {
+	const xml = `<?xml version="1.0"?><office:document-content xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0"><office:body><office:text><text:p>Hello ODT 文档</text:p><text:p>第二行内容</text:p></office:text></office:body></office:document-content>`;
+	return buildZip([
+		{ name: "content.xml", data: Buffer.from(xml, "utf8") }
+	]);
+}
+
 const failures = [];
 function check(label, fn) {
 	return Promise.resolve()
@@ -169,6 +177,22 @@ async function main() {
 		assert.throws(() => extractOffice(Buffer.from([0x00, 0x01, 0x02]), "xlsx"));
 	});
 
+	await check("officeConverterKind maps formats to COM converters", async () => {
+		assert.equal(officeConverterKind("docx"), "word");
+		assert.equal(officeConverterKind("doc"), "word");
+		assert.equal(officeConverterKind("xlsx"), "excel");
+		assert.equal(officeConverterKind("xls"), "excel");
+		assert.equal(officeConverterKind("pptx"), "powerpoint");
+		assert.equal(officeConverterKind("ppt"), "powerpoint");
+		assert.equal(officeConverterKind("odt"), null);
+		assert.equal(officeConverterKind("ods"), null);
+		assert.equal(officeConverterKind("odp"), null);
+	});
+
+	await check("convertOfficeToPdf returns null for formats without a converter (no spawn)", async () => {
+		assert.equal(await convertOfficeToPdf("C:\\x\\a.odt", "odt", 100, 1000), null);
+	});
+
 	await check("explorerSelectArg quotes the path for explorer", async () => {
 		assert.equal(explorerSelectArg("C:\\a b\\file.txt"), "/select,\"C:\\a b\\file.txt\"");
 		assert.equal(explorerSelectArg("E:\\ds harness\\a.docx"), "/select,\"E:\\ds harness\\a.docx\"");
@@ -218,12 +242,13 @@ async function main() {
 	const imageFile = join(tmp, "pic.png");
 	const binFile = join(tmp, "archive.zip");
 	const docxFile = join(tmp, "报告.docx");
-	const corruptDocxFile = join(tmp, "坏文档.docx");
+	const odtFile = join(tmp, "报告.odt");
+	const corruptOdtFile = join(tmp, "坏文档.odt");
 	await writeFile(textFile, "const answer = 42;\n// 中文注释\n", "utf8");
 	await writeFile(imageFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]));
 	await writeFile(binFile, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]));
-	await writeFile(docxFile, docxFixture());
-	await writeFile(corruptDocxFile, Buffer.from("this is not a zip document, sorry", "utf8"));
+	await writeFile(odtFile, odtFixture());
+	await writeFile(corruptOdtFile, Buffer.from("this is not a zip document, sorry", "utf8"));
 
 	const get = async (path, headers = {}) => {
 		const response = await fetch(`${base}${path}`, { headers });
@@ -260,19 +285,19 @@ async function main() {
 		assert.equal(payload.url, `${RAW_PATH}?path=${encodeURIComponent(imageFile)}`);
 	});
 
-	await check("preview extracts docx text over HTTP", async () => {
-		const { status, body } = await get(`${PREVIEW_PATH}?path=${encodeURIComponent(docxFile)}`);
+	await check("preview falls back to ODF text extraction over HTTP (no COM converter)", async () => {
+		const { status, body } = await get(`${PREVIEW_PATH}?path=${encodeURIComponent(odtFile)}`);
 		assert.equal(status, 200);
 		const payload = JSON.parse(body.toString("utf8"));
 		assert.equal(payload.kind, "office");
-		assert.equal(payload.officeFormat, "docx");
-		assert.match(payload.content, /Hello DOCX 标题/);
-		assert.match(payload.content, /第二段 & 内容/);
+		assert.equal(payload.officeFormat, "odt");
+		assert.match(payload.content, /Hello ODT 文档/);
+		assert.match(payload.content, /第二行内容/);
 		assert.equal(payload.truncated, false);
 	});
 
 	await check("preview degrades a corrupt office file to binary", async () => {
-		const { status, body } = await get(`${PREVIEW_PATH}?path=${encodeURIComponent(corruptDocxFile)}`);
+		const { status, body } = await get(`${PREVIEW_PATH}?path=${encodeURIComponent(corruptOdtFile)}`);
 		assert.equal(status, 200);
 		const payload = JSON.parse(body.toString("utf8"));
 		assert.equal(payload.kind, "binary");

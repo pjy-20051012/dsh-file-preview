@@ -17,9 +17,9 @@
 | 功能 | 说明 |
 | --- | --- |
 | 最近文件列表 | 侧边栏入口打开后默认显示本会话最近 10 个产出文件（名称/路径/时间，可预览/打开/定位文件夹） |
-| 右侧预览栏 | `shell.overlay` 全应用浮动层；文本/代码展示（截断保护）、图片、PDF 内嵌预览；Office 文档提供下载与打开；可从预览返回列表 |
+| 右侧预览栏 | `shell.overlay` 全应用浮动层；文本/代码展示（截断保护）、图片、PDF 内嵌预览；Office 文档（docx/xlsx/pptx/odt/ods/odp）服务端提取文本预览（零依赖 zip+XML 解析，无需 Office 程序）；可从预览返回列表 |
 | 对话文件操作行 | `conversation.chat.turnTail` chain 条目（`priority: -10`，优先于内置 deliverables 行），每文件提供 预览/打开/文件夹 三动作 |
-| 打开所在文件夹 | Windows `explorer /select`、macOS `open -R`、Linux 打开所在目录 |
+| 打开所在文件夹 | Windows `explorer /select`（路径自动加引号，含空格路径可正常定位）、macOS `open -R`、Linux 打开所在目录 |
 | 默认程序打开 | 复用会话层 `openFile`（宿主 `host.openPath`）；服务端也提供等价端点 |
 | 安全边界 | 所有端点仅接受回环来源（peer socket + Host 双重校验）；路径必须为绝对路径；预览只读 |
 

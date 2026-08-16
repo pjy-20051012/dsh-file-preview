@@ -13,7 +13,94 @@ import { createServer } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { apply, classify, isAbsolutePath, sniffText, PREVIEW_PATH, RAW_PATH, OPEN_PATH, REVEAL_PATH } from "../lib/index.js";
+import { apply, classify, extractOffice, explorerSelectArg, isAbsolutePath, sniffText, PREVIEW_PATH, RAW_PATH, OPEN_PATH, REVEAL_PATH } from "../lib/index.js";
+
+/**
+ * Build a minimal ZIP archive with STORED entries (method 0) — enough for
+ * the plugin's own zip reader and for realistic docx/xlsx/pptx fixtures.
+ */
+function buildZip(entries) {
+	const parts = [];
+	const central = [];
+	let offset = 0;
+	for (const { name, data } of entries) {
+		const nameBuf = Buffer.from(name, "utf8");
+		const local = Buffer.alloc(30);
+		local.writeUInt32LE(0x04034b50, 0);
+		local.writeUInt16LE(20, 4);
+		local.writeUInt16LE(0x0800, 6); // UTF-8 names
+		local.writeUInt16LE(0, 8); // stored
+		local.writeUInt32LE(0, 14); // crc (reader does not validate)
+		local.writeUInt32LE(data.length, 18);
+		local.writeUInt32LE(data.length, 22);
+		local.writeUInt16LE(nameBuf.length, 26);
+		local.writeUInt16LE(0, 28);
+		parts.push(local, nameBuf, data);
+		central.push({ nameBuf, data, offset });
+		offset += 30 + nameBuf.length + data.length;
+	}
+	const centralStart = offset;
+	const centralParts = [];
+	for (const { nameBuf, data, offset: o } of central) {
+		const c = Buffer.alloc(46);
+		c.writeUInt32LE(0x02014b50, 0);
+		c.writeUInt16LE(20, 4);
+		c.writeUInt16LE(20, 6);
+		c.writeUInt16LE(0x0800, 8);
+		c.writeUInt16LE(0, 10);
+		c.writeUInt32LE(0, 16);
+		c.writeUInt32LE(data.length, 20);
+		c.writeUInt32LE(data.length, 24);
+		c.writeUInt16LE(nameBuf.length, 28);
+		c.writeUInt16LE(0, 30);
+		c.writeUInt16LE(0, 32);
+		c.writeUInt16LE(0, 34);
+		c.writeUInt16LE(0, 36);
+		c.writeUInt32LE(0, 38);
+		c.writeUInt32LE(o, 42);
+		centralParts.push(c, nameBuf);
+	}
+	const centralSize = centralParts.reduce((s, b) => s + b.length, 0);
+	const eocd = Buffer.alloc(22);
+	eocd.writeUInt32LE(0x06054b50, 0);
+	eocd.writeUInt16LE(0, 4);
+	eocd.writeUInt16LE(0, 6);
+	eocd.writeUInt16LE(entries.length, 8);
+	eocd.writeUInt16LE(entries.length, 10);
+	eocd.writeUInt32LE(centralSize, 12);
+	eocd.writeUInt32LE(centralStart, 16);
+	eocd.writeUInt16LE(0, 20);
+	return Buffer.concat([...parts, ...centralParts, eocd]);
+}
+
+/** Minimal .docx fixture: two paragraphs with Chinese + entities. */
+function docxFixture() {
+	const xml = `<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:p><w:r><w:t>Hello DOCX 标题</w:t></w:r></w:p><w:p><w:r><w:t>第二段 &amp; 内容</w:t></w:r></w:p></w:body></w:document>`;
+	return buildZip([
+		{ name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+		{ name: "word/document.xml", data: Buffer.from(xml, "utf8") }
+	]);
+}
+
+/** Minimal .xlsx fixture: shared strings + one sheet with two rows. */
+function xlsxFixture() {
+	const shared = `<?xml version="1.0"?><sst xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><si><t>名称</t></si><si><t>数量</t></si><si><t>苹果</t></si></sst>`;
+	const sheet = `<?xml version="1.0"?><worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1" t="s"><v>0</v></c><c r="B1" t="s"><v>1</v></c></row><row r="2"><c r="A2" t="s"><v>2</v></c><c r="B2" t="inlineStr"><is><t>5</t></is></c></row></sheetData></worksheet>`;
+	return buildZip([
+		{ name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+		{ name: "xl/sharedStrings.xml", data: Buffer.from(shared, "utf8") },
+		{ name: "xl/worksheets/sheet1.xml", data: Buffer.from(sheet, "utf8") }
+	]);
+}
+
+/** Minimal .pptx fixture: one slide with one text run. */
+function pptxFixture() {
+	const slide = `<?xml version="1.0"?><p:sld xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld><p:spTree><p:sp><p:txBody><a:p><a:r><a:t>第一页标题</a:t></a:r></a:p></p:txBody></p:sp></p:spTree></p:cSld></p:sld>`;
+	return buildZip([
+		{ name: "[Content_Types].xml", data: Buffer.from("<Types/>") },
+		{ name: "ppt/slides/slide1.xml", data: Buffer.from(slide, "utf8") }
+	]);
+}
 
 const failures = [];
 function check(label, fn) {
@@ -53,6 +140,39 @@ async function main() {
 		assert.equal(sniffText(Buffer.from("hello world\nline two")), true);
 		assert.equal(sniffText(Buffer.from([0xff, 0x00, 0x01, 0x02])), false); // NUL byte → binary
 		assert.equal(sniffText(Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x0a, 0x0d])), true); // no NUL → text
+	});
+
+	await check("extractOffice extracts docx paragraphs with entities", async () => {
+		const text = extractOffice(docxFixture(), "docx");
+		assert.ok(text !== null, "extraction must succeed");
+		assert.match(text, /Hello DOCX 标题/);
+		assert.match(text, /第二段 & 内容/);
+	});
+
+	await check("extractOffice extracts xlsx shared strings and cells", async () => {
+		const text = extractOffice(xlsxFixture(), "xlsx");
+		assert.ok(text !== null, "extraction must succeed");
+		assert.match(text, /--- Sheet 1 ---/);
+		assert.match(text, /名称\t数量/);
+		assert.match(text, /苹果\t5/);
+	});
+
+	await check("extractOffice extracts pptx slide text", async () => {
+		const text = extractOffice(pptxFixture(), "pptx");
+		assert.ok(text !== null, "extraction must succeed");
+		assert.match(text, /--- Slide 1 ---/);
+		assert.match(text, /第一页标题/);
+	});
+
+	await check("extractOffice rejects non-zip content (handler degrades to binary)", async () => {
+		assert.throws(() => extractOffice(Buffer.from("not a zip at all"), "docx"), /not a zip/);
+		assert.throws(() => extractOffice(Buffer.from([0x00, 0x01, 0x02]), "xlsx"));
+	});
+
+	await check("explorerSelectArg quotes the path for explorer", async () => {
+		assert.equal(explorerSelectArg("C:\\a b\\file.txt"), "/select,\"C:\\a b\\file.txt\"");
+		assert.equal(explorerSelectArg("E:\\ds harness\\a.docx"), "/select,\"E:\\ds harness\\a.docx\"");
+		assert.equal(explorerSelectArg("C:\\x\"y.txt"), "/select,\"C:\\xy.txt\"");
 	});
 
 	// Boot a real http server that routes through the plugin's handlers.
@@ -97,9 +217,13 @@ async function main() {
 	const textFile = join(tmp, "sample.ts");
 	const imageFile = join(tmp, "pic.png");
 	const binFile = join(tmp, "archive.zip");
+	const docxFile = join(tmp, "报告.docx");
+	const corruptDocxFile = join(tmp, "坏文档.docx");
 	await writeFile(textFile, "const answer = 42;\n// 中文注释\n", "utf8");
 	await writeFile(imageFile, Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1, 2, 3]));
 	await writeFile(binFile, Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00, 0x00, 0x00, 0x00]));
+	await writeFile(docxFile, docxFixture());
+	await writeFile(corruptDocxFile, Buffer.from("this is not a zip document, sorry", "utf8"));
 
 	const get = async (path, headers = {}) => {
 		const response = await fetch(`${base}${path}`, { headers });
@@ -134,6 +258,24 @@ async function main() {
 		const payload = JSON.parse(body.toString("utf8"));
 		assert.equal(payload.kind, "image");
 		assert.equal(payload.url, `${RAW_PATH}?path=${encodeURIComponent(imageFile)}`);
+	});
+
+	await check("preview extracts docx text over HTTP", async () => {
+		const { status, body } = await get(`${PREVIEW_PATH}?path=${encodeURIComponent(docxFile)}`);
+		assert.equal(status, 200);
+		const payload = JSON.parse(body.toString("utf8"));
+		assert.equal(payload.kind, "office");
+		assert.equal(payload.officeFormat, "docx");
+		assert.match(payload.content, /Hello DOCX 标题/);
+		assert.match(payload.content, /第二段 & 内容/);
+		assert.equal(payload.truncated, false);
+	});
+
+	await check("preview degrades a corrupt office file to binary", async () => {
+		const { status, body } = await get(`${PREVIEW_PATH}?path=${encodeURIComponent(corruptDocxFile)}`);
+		assert.equal(status, 200);
+		const payload = JSON.parse(body.toString("utf8"));
+		assert.equal(payload.kind, "binary");
 	});
 
 	await check("preview classifies unknown binary", async () => {

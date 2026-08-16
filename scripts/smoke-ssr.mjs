@@ -103,6 +103,7 @@ const t = (key, params) => {
 		"recent.subtitle": "本会话最近 {count} 个文件，点击可预览",
 		"recent.empty": "还没有最近文件。",
 		"recent.preview": "预览 {name}",
+		"panel.officeExtracted": "已从 {format} 提取文本预览（不含排版）",
 		"kind.text": "文本",
 		"kind.image": "图片",
 		"kind.pdf": "PDF",
@@ -210,6 +211,13 @@ async function main() {
 		assert.match(pdf, /<iframe/);
 		const binary = renderer.renderToString(react.createElement("div", null, mod.renderPreviewBody({ kind: "binary" }, t)));
 		assert.match(binary, /此文件类型暂不支持预览/);
+	});
+
+	await check("renderPreviewBody renders office extracted text with banner", async () => {
+		const office = renderer.renderToString(react.createElement("div", null, mod.renderPreviewBody({ kind: "office", officeFormat: "docx", name: "r.docx", content: "Hello DOCX 标题\n第二段" }, t)));
+		assert.match(office, /已从 docx 提取文本预览/);
+		assert.match(office, /Hello DOCX 标题/);
+		assert.match(office, /第二段/);
 	});
 
 	await check("kindLabel maps kinds", async () => {
